@@ -1,12 +1,14 @@
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from app.db import get_connection
 from app.modbus_client import ModbusSender
 
-# PRUEBA LOCAL
-MODBUS_HOST = "127.0.0.1"
-MODBUS_PORT = 5020
-MODBUS_DEVICE_ID = 1
-MODBUS_START_ADDRESS = 0
+
+MODBUS_HOST = "192.168.1.125"
+MODBUS_PORT = 502
+MODBUS_DEVICE_ID = 2
+MODBUS_START_ADDRESS = 4502
+
 
 sender = ModbusSender(
     host=MODBUS_HOST,
@@ -17,24 +19,33 @@ sender = ModbusSender(
 
 
 def listen_items():
+
     conn = get_connection()
     conn.autocommit = True
 
     with conn.cursor() as cur:
+
         cur.execute("LISTEN items_channel;")
         print("Escuchando canal: items_channel")
 
         for notify in conn.notifies():
+
             print("\n--- Notificación recibida ---")
             print("Canal:", notify.channel)
             print("Payload crudo:", notify.payload)
 
             try:
-                data = json.loads(notify.payload)
-                print("Item recibido:", data)
-                print(f"id: {data.get('id')}, name: {data.get('name')}, value: {data.get('value')}")
 
-                value = float(data["value"])
+                data = json.loads(notify.payload)
+
+                value = Decimal(str(data["value"])).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP
+                )
+
+                print(f"[SERVER] id: {data.get('id')}")
+                print(f"[SERVER] name: {data.get('name')}")
+                print(f"[SERVER] value exacto: {value}")
 
                 ok = sender.send_value(value)
 
@@ -43,14 +54,8 @@ def listen_items():
                 else:
                     print("[LISTENER] Falló el envío Modbus")
 
-            except json.JSONDecodeError:
-                print("[LISTENER] No se pudo parsear el payload como JSON")
-            except KeyError:
-                print("[LISTENER] El payload no contiene la clave 'value'")
-            except ValueError as e:
-                print(f"[LISTENER] Valor inválido: {e}")
             except Exception as e:
-                print(f"[LISTENER] Error general: {e}")
+                print(f"[LISTENER] Error: {e}")
 
 
 if __name__ == "__main__":
