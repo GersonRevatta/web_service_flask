@@ -6,8 +6,8 @@ from app.modbus_client import ModbusSender
 
 MODBUS_HOST = "192.168.1.125"
 MODBUS_PORT = 502
-MODBUS_DEVICE_ID = 2
-MODBUS_START_ADDRESS = 4502
+MODBUS_DEVICE_ID = 1
+MODBUS_START_ADDRESS = 13
 
 
 sender = ModbusSender(
