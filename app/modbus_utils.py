@@ -64,10 +64,7 @@ def inverse_reorder_bytes(raw: bytes, fmt: str) -> bytes:
 def float_to_registers(value: float | str) -> list[int]:
     normalized = normalize_value(value)
 
-    # Float32 estándar en ABCD
     raw = struct.pack(">f", normalized)
-
-    # Reordenar según formato requerido por el display/software
     ordered = reorder_bytes(raw, FLOAT_FORMAT)
 
     reg1 = int.from_bytes(ordered[0:2], byteorder="big")
