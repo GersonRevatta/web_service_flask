@@ -1,4 +1,3 @@
-import json
 from decimal import Decimal, ROUND_HALF_UP
 from app.db import get_connection
 from app.modbus_client import ModbusSender
@@ -12,6 +11,7 @@ MODBUS_HOSTS = [
 MODBUS_PORT = 502
 MODBUS_DEVICE_ID = 1
 MODBUS_START_ADDRESS = 13
+PG_CHANNEL = "alam_rend_channel"
 
 
 senders = [
@@ -25,13 +25,13 @@ senders = [
 ]
 
 
-def listen_items():
+def listen_alam_rend():
     conn = get_connection()
     conn.autocommit = True
 
     with conn.cursor() as cur:
-        cur.execute("LISTEN items_channel;")
-        print("Escuchando canal: items_channel")
+        cur.execute(f"LISTEN {PG_CHANNEL};")
+        print(f"Escuchando canal: {PG_CHANNEL}")
 
         for notify in conn.notifies():
             print("\n--- Notificación recibida ---")
@@ -39,16 +39,16 @@ def listen_items():
             print("Payload crudo:", notify.payload)
 
             try:
-                data = json.loads(notify.payload)
+                if notify.payload is None:
+                    print("[LISTENER] Payload nulo, se ignora")
+                    continue
 
-                value = Decimal(str(data["value"])).quantize(
+                value = Decimal(notify.payload).quantize(
                     Decimal("0.01"),
                     rounding=ROUND_HALF_UP
                 )
 
-                print(f"[SERVER] id: {data.get('id')}")
-                print(f"[SERVER] name: {data.get('name')}")
-                print(f"[SERVER] value exacto: {value}")
+                print(f"[SERVER] rendimiento_new exacto: {value}")
 
                 results = []
 
@@ -69,4 +69,4 @@ def listen_items():
 
 
 if __name__ == "__main__":
-    listen_items()
+    listen_alam_rend()
