@@ -1,0 +1,25 @@
+
+CREATE OR REPLACE FUNCTION notify_alam_rend_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW."RENDIMIENTO_NEW" IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM pg_notify(
+        'alam_rend_channel',
+        CAST(NEW."RENDIMIENTO_NEW" AS text)
+    );
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_notify_alam_rend_insert
+ON alam_rend;
+
+CREATE TRIGGER trg_notify_alam_rend_insert
+AFTER INSERT ON alam_rend
+FOR EACH ROW
