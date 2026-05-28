@@ -1,8 +1,38 @@
+import logging
+import uuid
+import time
+from logging.handlers import RotatingFileHandler
 from decimal import Decimal, ROUND_HALF_UP
+
 from app.db import get_connection
 from app.modbus_client import ModbusSender
 
 
+# =========================
+# CONFIGURACIÓN DE LOGS PRO
+# =========================
+log_handler = RotatingFileHandler(
+    "listener.log",
+    maxBytes=5 * 1024 * 1024,  # 5MB
+    backupCount=5
+)
+
+log_formatter = logging.Formatter(
+    "%(asctime)s.%(msecs)03d | %(levelname)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+
+log_handler.setFormatter(log_formatter)
+
+logger = logging.getLogger("listener")
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
+logger.addHandler(logging.StreamHandler())  # consola opcional
+
+
+# =========================
+# CONFIG MODBUS / PG
+# =========================
 MODBUS_HOSTS = [
     "172.25.26.75",
     "172.25.26.76",
@@ -25,47 +55,86 @@ senders = [
 ]
 
 
+# =========================
+# LISTENER
+# =========================
 def listen_alam_rend():
     conn = get_connection()
     conn.autocommit = True
 
     with conn.cursor() as cur:
         cur.execute(f"LISTEN {PG_CHANNEL};")
-        print(f"Escuchando canal: {PG_CHANNEL}")
+        logger.info(f"[INIT] Escuchando canal: {PG_CHANNEL}")
 
         for notify in conn.notifies():
-            print("\n--- Notificación recibida ---")
-            print("Canal:", notify.channel)
-            print("Payload crudo:", notify.payload)
+
+            event_id = str(uuid.uuid4())[:8]  # identificador corto
+            start_time = time.time()
+
+            logger.info(f"[{event_id}] ===== NUEVO EVENTO =====")
+            logger.info(f"[{event_id}] Canal: {notify.channel}")
+            logger.info(f"[{event_id}] Payload crudo: {notify.payload}")
 
             try:
                 if notify.payload is None:
-                    print("[LISTENER] Payload nulo, se ignora")
+                    logger.warning(f"[{event_id}] Payload nulo → ignorado")
                     continue
 
+                # =========================
+                # PROCESAMIENTO
+                # =========================
                 value = Decimal(notify.payload).quantize(
                     Decimal("0.01"),
                     rounding=ROUND_HALF_UP
                 )
 
-                print(f"[SERVER] rendimiento_new exacto: {value}")
+                logger.info(f"[{event_id}] Valor procesado: {value}")
 
+                # =========================
+                # ENVÍO A MODBUS
+                # =========================
                 results = []
 
                 for sender in senders:
-                    print(f"\n[LISTENER] Enviando a {sender.host}:{sender.port}")
-                    ok = sender.send_value(value)
-                    results.append((sender.host, ok))
+                    send_start = time.time()
 
-                print("\n[LISTENER] Resumen de envío:")
-                for host, ok in results:
+                    logger.info(
+                        f"[{event_id}] Enviando → {sender.host}:{sender.port}"
+                    )
+
+                    ok = sender.send_value(value)
+
+                    duration = round((time.time() - send_start) * 1000, 2)
+
+                    results.append((sender.host, ok, duration))
+
                     if ok:
-                        print(f"  - {host}: OK")
+                        logger.info(
+                            f"[{event_id}] OK → {sender.host} ({duration} ms)"
+                        )
                     else:
-                        print(f"  - {host}: FALLÓ")
+                        logger.error(
+                            f"[{event_id}] FALLÓ → {sender.host} ({duration} ms)"
+                        )
+
+                # =========================
+                # RESUMEN
+                # =========================
+                total_time = round((time.time() - start_time) * 1000, 2)
+
+                logger.info(f"[{event_id}] ---- RESUMEN ----")
+                for host, ok, duration in results:
+                    status = "OK" if ok else "FAIL"
+                    logger.info(
+                        f"[{event_id}] {host} → {status} ({duration} ms)"
+                    )
+
+                logger.info(
+                    f"[{event_id}] Tiempo total evento: {total_time} ms"
+                )
 
             except Exception as e:
-                print(f"[LISTENER] Error: {e}")
+                logger.exception(f"[{event_id}] ERROR CRÍTICO: {e}")
 
 
 if __name__ == "__main__":

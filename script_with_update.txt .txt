@@ -1,0 +1,32 @@
+CREATE OR REPLACE FUNCTION analytics.notify_alam_rend_insert()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW."RENDIMIENTO_NEW" IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'UPDATE'
+       AND NEW."RENDIMIENTO_NEW" IS NOT DISTINCT FROM OLD."RENDIMIENTO_NEW" THEN
+        RETURN NEW;
+    END IF;
+
+    PERFORM pg_notify(
+        'alam_rend_channel',
+        CAST(NEW."RENDIMIENTO_NEW" AS text)
+    );
+
+    RETURN NEW;
+END;
+$$;
+
+-- Eliminar trigger anterior si existe
+DROP TRIGGER IF EXISTS trg_notify_alam_rend_insert
+ON analytics.alam_rend;
+
+-- Crear trigger nuevo con INSERT + UPDATE
+CREATE TRIGGER trg_notify_alam_rend_insert
+AFTER INSERT OR UPDATE ON analytics.alam_rend
+FOR EACH ROW
+EXECUTE FUNCTION analytics.notify_alam_rend_insert();
